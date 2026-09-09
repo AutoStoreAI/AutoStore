@@ -82,7 +82,8 @@ function Join({ selected, onBack, onSubmit }: { selected: AutomationId; onBack: 
       }
       if (insertError) throw insertError;
       onSubmit(cleanName);
-    } catch {
+    } catch (err){
+		console.error(err)
       setError("No hemos podido guardar tu solicitud. Prueba de nuevo en un momento.");
     } finally {
       setIsSubmitting(false);
