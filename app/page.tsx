@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { getSupabaseClient } from "../lib/supabase";
 import { track, type TrackingEvent } from "../lib/tracking";
 
 type Step = "landing" | "prediction" | "cart" | "autonomy" | "join" | "success";
@@ -50,6 +51,45 @@ function Cart({ onBack, onApprove }: { onBack: () => void; onApprove: () => void
 
 function Autonomy({ selected, onSelect, onBack, onContinue }: { selected: AutomationId | null; onSelect: (level: AutomationId) => void; onBack: () => void; onContinue: () => void }) { return <main className="app-shell screen-enter"><header><Back onClick={onBack} /><Logo /><span className="header-spacer" /></header><section className="intro autonomy-intro"><div className="eyebrow"><i />Tú tienes el control</div><h1>¿Hasta dónde confiarías en AutoStore?</h1><p>Puedes decidir cuánto quieres delegar. Tú tienes el control.</p></section><section className="levels">{(Object.entries(levels) as [AutomationId, typeof levels[AutomationId]][]).map(([id, level]) => <button className={`level ${selected === id ? "selected" : ""} ${id === "automatic" ? "featured" : ""}`} key={id} onClick={() => onSelect(id)}><span className="level-icon">{level.icon}</span><span className="level-copy"><strong>{level.title}</strong><small>{level.description}</small></span><span className="radio">{selected === id && "✓"}</span>{id === "automatic" && <span className="recommended">MÁXIMA AUTOMATIZACIÓN</span>}</button>)}</section>{selected && <button className="primary fixed-bottom" onClick={onContinue}>Quiero probar AutoStore <span>→</span></button>}</main>; }
 
-function Join({ selected, onBack, onSubmit }: { selected: AutomationId; onBack: () => void; onSubmit: (name: string) => void }) { const [name, setName] = useState(""); const [email, setEmail] = useState(""); const handleSubmit = (event: FormEvent) => { event.preventDefault(); if (name && email) onSubmit(name); }; return <main className="join screen-enter"><header><Back onClick={onBack} /><Logo /><span className="header-spacer" /></header><section className="join-content"><div className="join-symbol">✦</div><div className="eyebrow"><i />Acceso anticipado</div><h1>Queremos que seas de los primeros.</h1><p>Estamos construyendo AutoStore para que nunca tengas que acordarte de reponer tus productos habituales.</p><form onSubmit={handleSubmit}><label>Nombre<input required value={name} onChange={event => setName(event.target.value)} placeholder="¿Cómo te llamas?" /></label><label>Email<input required type="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="tu@email.com" /></label><p className="preference">Tu preferencia: <b>{levels[selected].title}</b></p><button className="primary" type="submit">Unirme a la beta <span>→</span></button></form><small className="privacy">Sin spam. Solo te escribiremos cuando puedas probarlo.</small></section></main>; }
+function Join({ selected, onBack, onSubmit }: { selected: AutomationId; onBack: () => void; onSubmit: (name: string) => void }) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    const cleanName = name.trim();
+    const cleanEmail = email.trim().toLowerCase();
+    const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail);
+
+    if (!cleanName) return setError("Escribe tu nombre para continuar.");
+    if (!isValidEmail) return setError("Introduce un email válido.");
+
+    setError("");
+    setIsSubmitting(true);
+    try {
+      const { error: insertError } = await getSupabaseClient().from("beta_signups").insert({
+        name: cleanName,
+        email: cleanEmail,
+        automation_level: selected,
+        created_at: new Date().toISOString(),
+      });
+
+      if (insertError?.code === "23505") {
+        setError("Este email ya está apuntado a la beta.");
+        return;
+      }
+      if (insertError) throw insertError;
+      onSubmit(cleanName);
+    } catch {
+      setError("No hemos podido guardar tu solicitud. Prueba de nuevo en un momento.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return <main className="join screen-enter"><header><Back onClick={onBack} /><Logo /><span className="header-spacer" /></header><section className="join-content"><div className="join-symbol">✦</div><div className="eyebrow"><i />Acceso anticipado</div><h1>Queremos que seas de los primeros.</h1><p>Estamos construyendo AutoStore para que nunca tengas que acordarte de reponer tus productos habituales.</p><form onSubmit={handleSubmit} noValidate><label>Nombre<input required value={name} onChange={event => setName(event.target.value)} placeholder="¿Cómo te llamas?" aria-invalid={Boolean(error)} /></label><label>Email<input required type="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="tu@email.com" aria-invalid={Boolean(error)} /></label><p className="preference">Tu preferencia: <b>{levels[selected].title}</b></p>{error && <p className="form-error" role="alert">{error}</p>}<button className="primary" type="submit" disabled={isSubmitting}>{isSubmitting ? "Guardando tu plaza…" : <>Unirme a la beta <span>→</span></>}</button></form><small className="privacy">Sin spam. Solo te escribiremos cuando puedas probarlo.</small></section></main>;
+}
 
 function Success({ name, selected, onRestart }: { name: string; selected: AutomationId; onRestart: () => void }) { return <main className="success screen-enter"><Logo /><div className="success-check">✓</div><div><div className="eyebrow"><i />Todo listo</div><h1>🎉 Estás dentro.</h1><p>Te avisaremos cuando AutoStore esté listo para que puedas probarlo.</p><div className="success-preference"><span>Tu nivel de automatización</span><b>{levels[selected].title}</b></div><p className="thanks">Gracias{ name ? `, ${name},` : ""} por ayudarnos a construir una forma más inteligente de hacer la compra.</p></div><button className="outline" onClick={onRestart}>Volver al inicio</button></main>; }
